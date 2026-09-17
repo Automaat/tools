@@ -1,0 +1,43 @@
+name: Validate SSA replaceAll
+
+on:
+  pull_request:
+    paths:
+      - go/ssa/lift.go
+      - go/ssa/lift_test.go
+      - .github/workflows/validate-ssa-replace-all.yml
+
+permissions:
+  contents: read
+
+jobs:
+  test-benchmark:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    container:
+      image: golang:1.26
+      options: --cpus 2 --memory 1g --memory-swap 1g
+    env:
+      GOMAXPROCS: 2
+      GOMEMLIMIT: 700MiB
+      GOFLAGS: -p=1
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Test candidate
+        run: go test ./go/ssa -run '^TestReplaceAllRepeatedOperands$' -count=1
+      - name: Benchmark baseline
+        run: |
+          git checkout HEAD^ -- go/ssa/lift.go
+          go test ./go/ssa -run '^$' -bench '^BenchmarkReplaceAllRepeatedOperands$' -benchmem -benchtime=200ms -count=3 | tee /tmp/baseline.txt
+      - name: Benchmark candidate
+        run: |
+          git checkout HEAD -- go/ssa/lift.go
+          go test ./go/ssa -run '^$' -bench '^BenchmarkReplaceAllRepeatedOperands$' -benchmem -benchtime=200ms -count=3 | tee /tmp/candidate.txt
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ssa-replace-all-benchmarks
+          path: /tmp/*.txt
+          retention-days: 14
